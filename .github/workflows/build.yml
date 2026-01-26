@@ -36,17 +36,23 @@ jobs:
     - name: Find git version
       id: git-version
       run: echo "id=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-    - name: Find correct JAR
+    - name: Find the correct plugin JAR
       if: ${{ github.event_name == 'push' }}
       id: find-jar
       run: |
         output="$(find /home/runner/work/AuthX/AuthX/core/target/ -name "AuthX-*.jar" -type f -printf "%f\n")"
         echo "::set-output name=jarname::$output"
+    - name: Find the correct api JAR
+      if: ${{ github.event_name == 'push' }}
+      id: find-jar-api
+      run: |
+        output="$(find /home/runner/work/AuthX/AuthX/api/target/ -name "AuthX-*-Api.jar" -type f -printf "%f\n")"
+        echo "::set-output name=jarname::$output"
     - name: Release the build
       if: ${{ github.event_name == 'push' }}
       uses: ncipollo/release-action@v1
       with:
-        artifacts: /home/runner/work/AuthX/AuthX/core/target/${{ steps.find-jar.outputs.jarname }},
+        artifacts: /home/runner/work/AuthX/AuthX/core/target/${{ steps.find-jar.outputs.jarname }},/home/runner/work/AuthX/AuthX/api/target/${{ steps.find-jar-api.outputs.jarname }}
         body: ${{ join(github.event.commits.*.message, '\n') }}
         prerelease: true
         name: Dev-build ${{ steps.git-version.outputs.id }}
