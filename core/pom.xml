@@ -157,6 +157,10 @@
             <id>jitpack</id>
             <url>https://jitpack.io</url>
         </repository>
+        <repository>
+            <id>elytrium-repo</id>
+            <url>https://maven.elytrium.net/repo/</url>
+        </repository>
     </repositories>
 
     <dependencies>
