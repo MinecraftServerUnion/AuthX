@@ -72,5 +72,6 @@ command:
     need-old-password: true
 
 regex:
+  username-regex: ".*" # Suggested regex: "[a-zA-Z0-9_]{3,20}"
 #  email-regex: ".+@[a-zA-Z0-9_\\-\\.]+\\.[a-zA-Z]{2,}" # The regex pattern for email validation. The default option is a common email pattern.
   password-regex: "[!-~]{3,20}" # The regex pattern for password validation. The default option includes any ASCII character from ! to ~.

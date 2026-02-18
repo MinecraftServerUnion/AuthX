@@ -1,6 +1,7 @@
 package cn.jason31416.authX.injection.packet;
 
 import cn.jason31416.authX.injection.XLoginSessionHandler;
+import cn.jason31416.authX.injection.XLoginSessionHandlerOld;
 import cn.jason31416.authX.message.Message;
 import cn.jason31416.authX.util.Config;
 import cn.jason31416.authX.util.Logger;

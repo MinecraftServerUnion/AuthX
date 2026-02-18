@@ -1,7 +1,9 @@
 package cn.jason31416.authX;
 
+import cn.jason31416.authX.handler.LoginSession;
 import cn.jason31416.authX.hook.TABHandler;
-import cn.jason31416.authx.api.AbstractAuthenticator;
+import cn.jason31416.authX.injection.XLoginSessionHandlerOld;
+import cn.jason31416.authx.api.*;
 import cn.jason31416.authX.authbackend.LocalAuthenticator;
 import cn.jason31416.authX.authbackend.UniauthAuthenticator;
 import cn.jason31416.authX.command.AccountCommandHandler;
@@ -13,9 +15,6 @@ import cn.jason31416.authX.injection.PacketInjector;
 import cn.jason31416.authX.injection.XLoginSessionHandler;
 import cn.jason31416.authX.message.MessageLoader;
 import cn.jason31416.authX.util.Config;
-import cn.jason31416.authx.api.AuthX;
-import cn.jason31416.authx.api.AuthXApi;
-import cn.jason31416.authx.api.IDatabaseHandler;
 import com.google.inject.Inject;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.event.Subscribe;
@@ -180,5 +179,10 @@ public class AuthXPlugin implements AuthXApi {
     @Override
     public String getVersion() {
         return "Beta 2.2";
+    }
+
+    @Override
+    public ILoginSession getPlayerData(String username) {
+        return LoginSession.getSession(username);
     }
 }

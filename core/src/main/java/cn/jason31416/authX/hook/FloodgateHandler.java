@@ -6,6 +6,10 @@ import java.util.UUID;
 
 public class FloodgateHandler {
     public static boolean isFloodgatePlayer(UUID uuid){
-        return FloodgateApi.getInstance().isFloodgatePlayer(uuid);
+        try {
+            return FloodgateApi.getInstance().isFloodgatePlayer(uuid);
+        }catch (Exception e){
+            return false;
+        }
     }
 }

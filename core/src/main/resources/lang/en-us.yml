@@ -1,5 +1,6 @@
 auth:
   invalid-session: "&cInvalid session! Please log in again."
+  invalid-username: "&cInvalid username! Please avoid using weird characters."
   unknown-error: "&cUnknown error! Please contact an administrator and try again."
 
   failed-to-login: "&cLogin verification system error, please contact an administrator!"

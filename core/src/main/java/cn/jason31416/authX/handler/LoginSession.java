@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @Getter
-public class LoginSession {
+public class LoginSession implements cn.jason31416.authx.api.ILoginSession {
     @Getter
     private static Map<String, LoginSession> sessionMap = new HashMap<>();
 

@@ -40,7 +40,7 @@ import java.util.ArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Getter
-public class XLoginSessionHandler {
+public class XLoginSessionHandlerOld {
     private static EnumAccessor loginStatsEnumAccessor;
     private static Accessor initialLoginSessionHandlerAccessor;
 
@@ -57,8 +57,7 @@ public class XLoginSessionHandler {
     private static MethodHandle getInboundField;
     private static MethodHandle getMcConnectionField;
     private static MethodHandle getCurrentStateField;
-    private static MethodHandle authSessionHandler_constructor;
-    private static Class<?>[] authSessionHandler_constructorParamTypes;
+    private static MethodHandle authSessionHandler_allArgsConstructor;
 
     private final InitialLoginSessionHandler initialLoginSessionHandler;
     private final MinecraftConnection mcConnection;
@@ -68,7 +67,7 @@ public class XLoginSessionHandler {
     private ServerLoginPacket login;
     private byte[] verify;
 
-    public XLoginSessionHandler(InitialLoginSessionHandler initialLoginSessionHandler) {
+    public XLoginSessionHandlerOld(InitialLoginSessionHandler initialLoginSessionHandler) {
         this.initialLoginSessionHandler = initialLoginSessionHandler;
         try {
             this.server = (VelocityServer) getServerField.invoke(initialLoginSessionHandler);
@@ -94,20 +93,9 @@ public class XLoginSessionHandler {
 
         MethodHandles.Lookup lookup = MethodHandles.lookup();
 
-        // Velocity internals change frequently; prefer signature-based matching with a name fallback.
-        try {
-            assertStateMethod = lookup.unreflect(ReflectionUtil.handleAccessible(
-                    initialLoginSessionHandlerAccessor.findFirstMethodByName(true, "assertState")
-            ));
-        } catch (NoSuchMethodException ignored) {
-            assertStateMethod = lookup.unreflect(ReflectionUtil.handleAccessible(
-                    initialLoginSessionHandlerAccessor.findFirstMethod(true,
-                            m -> m.getReturnType() == void.class
-                                    && m.getParameterCount() == 1
-                                    && m.getParameterTypes()[0].equals(loginStateEnum),
-                            "InitialLoginSessionHandler assertState-like method not found")
-            ));
-        }
+        assertStateMethod = lookup.unreflect(ReflectionUtil.handleAccessible(
+                initialLoginSessionHandlerAccessor.findFirstMethodByName(true, "assertState")
+        ));
 
         Field currentState = ReflectionUtil.handleAccessible(
                 initialLoginSessionHandlerClass.getDeclaredField("currentState")
@@ -136,65 +124,19 @@ public class XLoginSessionHandler {
         ));
 
 
-        // AuthSessionHandler constructor signature is not stable across Velocity versions (3.4 -> 3.5 changed).
-// We match by a stable prefix: (VelocityServer, LoginInboundConnection, GameProfile, boolean, ...optional)
-        java.lang.reflect.Constructor<?> bestCtor = null;
-        for (java.lang.reflect.Constructor<?> c : AuthSessionHandler.class.getDeclaredConstructors()) {
-            Class<?>[] p = c.getParameterTypes();
-            if (p.length >= 4
-                    && p[0] == VelocityServer.class
-                    && p[1] == LoginInboundConnection.class
-                    && p[2] == GameProfile.class
-                    && p[3] == boolean.class) {
-                if (bestCtor == null || p.length < bestCtor.getParameterTypes().length) {
-                    bestCtor = c; // prefer the shortest matching ctor
-                }
-            }
-        }
-        if (bestCtor == null) {
-            throw new NoSuchMethodException("AuthSessionHandler ctor not found (prefix match failed)");
-        }
-        bestCtor = ReflectionUtil.handleAccessible(bestCtor);
-        authSessionHandler_constructor = lookup.unreflectConstructor(bestCtor);
-        authSessionHandler_constructorParamTypes = bestCtor.getParameterTypes();
+        authSessionHandler_allArgsConstructor = lookup.unreflectConstructor(ReflectionUtil.handleAccessible(
+                AuthSessionHandler.class.getDeclaredConstructor(
+                        VelocityServer.class,
+                        LoginInboundConnection.class,
+                        GameProfile.class,
+                        boolean.class
+                )
+        ));
     }
 
     private void initValues() throws Throwable {
         this.login = (ServerLoginPacket) getLoginField.invoke(initialLoginSessionHandler);
         this.verify = (byte[]) getVerifyField.invoke(initialLoginSessionHandler);
-    }
-
-    private static Object defaultValue(Class<?> type) {
-        // For optional extra constructor params: primitives get zero/false, references get null.
-        if (!type.isPrimitive()) return null;
-        if (type == boolean.class) return false;
-        if (type == byte.class) return (byte) 0;
-        if (type == short.class) return (short) 0;
-        if (type == int.class) return 0;
-        if (type == long.class) return 0L;
-        if (type == float.class) return 0.0f;
-        if (type == double.class) return 0.0d;
-        if (type == char.class) return (char) 0;
-        return null;
-    }
-
-    private AuthSessionHandler newAuthSessionHandler(LoginInboundConnection inbound, GameProfile profile, boolean onlineMode) throws Throwable {
-        if (authSessionHandler_constructor == null || authSessionHandler_constructorParamTypes == null) {
-            throw new IllegalStateException("XLoginSessionHandler not initialized (call XLoginSessionHandler.init())");
-        }
-
-        Object[] args = new Object[authSessionHandler_constructorParamTypes.length];
-        args[0] = this.server;
-        args[1] = inbound;
-        args[2] = profile;
-        args[3] = onlineMode;
-
-        // Fill any extra params with safe defaults (null for refs, 0 for primitives).
-        for (int i = 4; i < args.length; i++) {
-            args[i] = defaultValue(authSessionHandler_constructorParamTypes[i]);
-        }
-
-        return (AuthSessionHandler) authSessionHandler_constructor.invokeWithArguments(args);
     }
 
     public void handle(EncryptionResponsePacket packet) throws Throwable {
@@ -267,8 +209,8 @@ public class XLoginSessionHandler {
                                     mcConnection.getChannel().eventLoop().submit(() -> {
                                         try{
                                             this.mcConnection.setActiveSessionHandler(StateRegistry.LOGIN,
-                                                    newAuthSessionHandler(
-                                                            inbound, new GameProfile(
+                                                    (AuthSessionHandler) authSessionHandler_allArgsConstructor.invoke(
+                                                            this.server, inbound, new GameProfile(
                                                                     UuidUtils.generateOfflinePlayerUuid(login.getUsername()),
                                                                     login.getUsername(),
                                                                     new ArrayList<>())
@@ -286,8 +228,8 @@ public class XLoginSessionHandler {
                             mcConnection.getChannel().eventLoop().submit(() -> {
                                 try {
                                     this.mcConnection.setActiveSessionHandler(StateRegistry.LOGIN,
-                                            newAuthSessionHandler(
-                                                    inbound, new GameProfile(
+                                            (AuthSessionHandler) authSessionHandler_allArgsConstructor.invoke(
+                                                    this.server, inbound, new GameProfile(
                                                             UuidUtils.generateOfflinePlayerUuid(login.getUsername()),
                                                             login.getUsername(),
                                                             new ArrayList<>())

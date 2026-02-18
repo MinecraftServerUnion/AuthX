@@ -10,7 +10,9 @@ import cn.jason31416.authX.util.Logger;
 import com.velocitypowered.api.event.PostOrder;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
+import com.velocitypowered.api.event.connection.LoginEvent;
 import com.velocitypowered.api.event.connection.PreLoginEvent;
+import com.velocitypowered.api.event.player.CookieReceiveEvent;
 import com.velocitypowered.api.event.player.GameProfileRequestEvent;
 import com.velocitypowered.api.event.player.PlayerChatEvent;
 import com.velocitypowered.api.util.GameProfile;
@@ -19,6 +21,7 @@ import com.velocitypowered.proxy.connection.client.InitialInboundConnection;
 import com.velocitypowered.proxy.connection.client.LoginInboundConnection;
 import lombok.SneakyThrows;
 import net.elytrium.limboapi.api.event.LoginLimboRegisterEvent;
+import net.kyori.adventure.key.Key;
 
 import javax.annotation.Nonnull;
 import java.lang.invoke.MethodHandle;
@@ -59,73 +62,89 @@ public class EventListener {
     @SneakyThrows
     @Subscribe
     public void onPreLogin(@Nonnull PreLoginEvent event) {
-        String username = event.getUsername();
+        try {
+            String username = event.getUsername();
 
-        AbstractAuthenticator.UserStatus accountStatus;
+            if(!username.matches(Config.getConfigTree().getString("regex.username-regex", ".*"))){
+                event.setResult(PreLoginEvent.PreLoginComponentResult.denied(Message.getMessage("auth.invalid-username").toComponent()));
+                return;
+            }
 
-        try{
-            accountStatus = AbstractAuthenticator.getInstance().fetchStatus(username);
-        }catch (Exception e){
-            event.setResult(PreLoginEvent.PreLoginComponentResult.denied(Message.getMessage("auth.failed-to-login").toComponent()));
-            throw e;
-        }
+            AbstractAuthenticator.UserStatus accountStatus;
 
-        LoginSession session = new LoginSession(username, event.getUniqueId());
-        LoginSession.getSessionMap().put(username, session);
+            try {
+                accountStatus = AbstractAuthenticator.getInstance().fetchStatus(username);
+            } catch (Exception e) {
+                event.setResult(PreLoginEvent.PreLoginComponentResult.denied(Message.getMessage("auth.failed-to-login").toComponent()));
+                throw e;
+            }
 
-        if(AuthXPlugin.getInstance().getProxy().getPluginManager().isLoaded("floodgate") && FloodgateHandler.isFloodgatePlayer(event.getUniqueId())){
-            return;
-        }
+            UUID uuid = event.getUniqueId();
+            if(event.getUniqueId() == null) uuid = UUID.nameUUIDFromBytes(("OfflinePlayer:" + username).getBytes(StandardCharsets.UTF_8));
+            LoginSession session = new LoginSession(username, uuid);
+            LoginSession.getSessionMap().put(username, session);
 
-        String cs;
+            if (AuthXPlugin.getInstance().getProxy().getPluginManager().isLoaded("floodgate") && FloodgateHandler.isFloodgatePlayer(event.getUniqueId())) {
+                return;
+            }
 
-        if(accountStatus == AbstractAuthenticator.UserStatus.IMPORTED){
-            event.setResult(PreLoginEvent.PreLoginComponentResult.forceOnlineMode());
-            session.setVerifyPassword(true);
-            session.setEnforcePrimaryMethod(true);
-            cs = "imported";
-        }else{
-            boolean isPremium = false;
-            if(!loginPremiumFailedCache.containsKey(event.getUniqueId())){
-                switch (Config.getString("authentication.filter-method").toLowerCase(Locale.ROOT)){
-                    case "uuid" -> {
-                        isPremium = checkUserYggdrasilStatusFromUUID(username, event.getUniqueId());
-                    }
-                    case "request" -> {
-                        isPremium = checkUserYggdrasilStatusFromRequest(username, event.getUniqueId());
-                    }
-                    default -> { // auto
-                        isPremium = checkUserYggdrasilStatusFromUUID(username, event.getUniqueId());
-                        if(isPremium){
+            String cs;
+
+            if (accountStatus == AbstractAuthenticator.UserStatus.IMPORTED) {
+                event.setResult(PreLoginEvent.PreLoginComponentResult.forceOnlineMode());
+                session.setVerifyPassword(true);
+                session.setEnforcePrimaryMethod(true);
+                cs = "imported";
+            } else {
+                boolean isPremium = false;
+                if (event.getUniqueId()!=null&&!loginPremiumFailedCache.containsKey(event.getUniqueId())) {
+                    switch (Config.getString("authentication.filter-method").toLowerCase(Locale.ROOT)) {
+                        case "uuid" -> {
+                            isPremium = checkUserYggdrasilStatusFromUUID(username, event.getUniqueId());
+                        }
+                        case "request" -> {
                             isPremium = checkUserYggdrasilStatusFromRequest(username, event.getUniqueId());
                         }
+                        default -> { // auto
+                            isPremium = checkUserYggdrasilStatusFromUUID(username, event.getUniqueId());
+                            if (isPremium) {
+                                isPremium = checkUserYggdrasilStatusFromRequest(username, event.getUniqueId());
+                            }
+                        }
                     }
                 }
-            }
-            if(isPremium){
-                event.setResult(PreLoginEvent.PreLoginComponentResult.forceOnlineMode());
-                session.setVerifyPassword(false);
+                if (isPremium) {
+                    event.setResult(PreLoginEvent.PreLoginComponentResult.forceOnlineMode());
+                    session.setVerifyPassword(false);
 
-                LoginInboundConnection inboundConnection = (LoginInboundConnection) event.getConnection();
-                InitialInboundConnection initialInbound = (InitialInboundConnection) DELEGATE_FIELD.invokeExact(inboundConnection);
-                MinecraftConnection connection = initialInbound.getConnection();
-                if (!connection.isClosed()) {
-                    pendingLogins.add(username);
-                    connection.getChannel().closeFuture().addListener(future -> {
-                        if(pendingLogins.remove(username) && Config.getBoolean("authentication.enable-fail-cache")){
-                            loginPremiumFailedCache.put(event.getUniqueId(), System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(1));
+                    try {
+                        LoginInboundConnection inboundConnection = (LoginInboundConnection) event.getConnection();
+                        InitialInboundConnection initialInbound = (InitialInboundConnection) DELEGATE_FIELD.invokeExact(inboundConnection);
+                        MinecraftConnection connection = initialInbound.getConnection();
+                        if (!connection.isClosed()) {
+                            pendingLogins.add(username);
+                            connection.getChannel().closeFuture().addListener(future -> {
+                                if (pendingLogins.remove(username) && Config.getBoolean("authentication.enable-fail-cache")) {
+                                    loginPremiumFailedCache.put(event.getUniqueId(), System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(1));
+                                }
+                            });
                         }
-                    });
+                    }catch (Exception e){
+                        pendingLogins.add(username);
+                    }
+                    cs = "yggdrasil";
+                } else {
+                    event.setResult(PreLoginEvent.PreLoginComponentResult.forceOfflineMode());
+                    session.setVerifyPassword(true);
+                    cs = "offline";
                 }
-                cs = "yggdrasil";
-            }else {
-                event.setResult(PreLoginEvent.PreLoginComponentResult.forceOfflineMode());
-                session.setVerifyPassword(true);
-                cs = "offline";
             }
+            if (Config.getBoolean("log.pre-login"))
+                Logger.info("Player " + event.getUsername() + " (" + event.getUniqueId() + ") Joined the server! Detected as " + cs + " authentication.");
+        }catch (Throwable e){
+            Logger.error("Error when prelogin: "+e.getMessage());
+            e.printStackTrace();
         }
-        if(Config.getBoolean("log.pre-login"))
-            Logger.info("Player "+event.getUsername()+" ("+event.getUniqueId()+") Joined the server! Detected as " + cs + " authentication.");
     }
 
     @Subscribe

@@ -1,5 +1,6 @@
 auth:
   invalid-session: "&c无效的会话! 请重新登录"
+  invalid-username: "&c用户名不符合规范! 请使用英文字符与数字组合作为用户名!"
   unknown-error: "&c未知错误! 请联系管理员并重试"
 
   failed-to-login: "&c登录验证系统出错，请联系管理员!"

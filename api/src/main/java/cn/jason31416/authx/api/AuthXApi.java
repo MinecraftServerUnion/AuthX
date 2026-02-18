@@ -19,4 +19,6 @@ public interface AuthXApi {
      * @return Version string
      */
     String getVersion();
+
+    ILoginSession getPlayerData(String username);
 }
