@@ -52,9 +52,18 @@ public class DatabaseHandler implements IDatabaseHandler {
         dataSource = new HikariDataSource(buildDataSourceConfig(databaseType));
 
         try (Connection connection = getConnection()) {
-            connection.prepareStatement("CREATE TABLE IF NOT EXISTS authmethods (username VARCHAR(255) PRIMARY KEY, verified VARCHAR(255), preferred VARCHAR(255), modkey VARCHAR(255) default NULL)").execute();
+            connection.prepareStatement("CREATE TABLE IF NOT EXISTS authmethods (username VARCHAR(255) PRIMARY KEY, verified VARCHAR(255), preferred VARCHAR(255), modkey VARCHAR(255) default NULL, password_set BOOLEAN DEFAULT FALSE)").execute();
             connection.prepareStatement("CREATE TABLE IF NOT EXISTS uuiddata (username VARCHAR(255) PRIMARY KEY, uuid VARCHAR(255))").execute();
             connection.prepareStatement("CREATE TABLE IF NOT EXISTS passwordbackup (username VARCHAR(255) PRIMARY KEY, password VARCHAR(255), pubkeyhash VARCHAR(10))").execute();
+            ensurePasswordSetColumn(connection);
+        }
+    }
+
+    private void ensurePasswordSetColumn(Connection connection) {
+        try {
+            connection.prepareStatement("ALTER TABLE authmethods ADD COLUMN password_set BOOLEAN DEFAULT FALSE").execute();
+        } catch (SQLException ignored) {
+            // Column already exists on upgraded installs.
         }
     }
 
@@ -259,6 +268,39 @@ public class DatabaseHandler implements IDatabaseHandler {
 
         if (!getAuthMethods(username).contains(method)) {
             addAuthMethod(username, method);
+        }
+    }
+
+    @SneakyThrows
+    public void setPasswordSet(String username, boolean passwordSet) {
+        try (Connection connection = getConnection()) {
+            String ensureRowSql = switch (databaseType) {
+                case MYSQL -> "INSERT IGNORE INTO authmethods (username, verified, preferred, password_set) VALUES (?, '', NULL, ?)";
+                case SQLITE -> "INSERT OR IGNORE INTO authmethods (username, verified, preferred, password_set) VALUES (?, '', NULL, ?)";
+                case H2 -> "MERGE INTO authmethods (username, verified, preferred, password_set) KEY(username) VALUES (?, '', NULL, ?)";
+            };
+            var ensureStmt = connection.prepareStatement(ensureRowSql);
+            ensureStmt.setString(1, username);
+            ensureStmt.setBoolean(2, passwordSet);
+            ensureStmt.execute();
+
+            var updateStmt = connection.prepareStatement("UPDATE authmethods SET password_set =? WHERE username =?");
+            updateStmt.setBoolean(1, passwordSet);
+            updateStmt.setString(2, username);
+            updateStmt.execute();
+        }
+    }
+
+    @SneakyThrows
+    public boolean isPasswordSet(String username) {
+        try (Connection connection = getConnection()) {
+            var st = connection.prepareStatement("SELECT password_set FROM authmethods WHERE username =?");
+            st.setString(1, username);
+            var rs = st.executeQuery();
+            if (!rs.next()) {
+                return false;
+            }
+            return rs.getBoolean("password_set");
         }
     }
 

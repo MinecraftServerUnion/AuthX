@@ -13,13 +13,18 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 public class YggdrasilAuthenticator {
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
     public static CompletableFuture<Boolean> checkExists(String username, UUID uuid, String url){
         CompletableFuture<Boolean> future = new CompletableFuture<>();
         var res = HttpClient.newHttpClient().sendAsync(HttpRequest.newBuilder()
@@ -75,31 +80,46 @@ public class YggdrasilAuthenticator {
     }
 
     private static boolean isLocalPasswordBackend() {
-        String backend = Config.getString("authentication.password.method").toLowerCase();
+        String backend = Config.getString("authentication.password.method").toLowerCase(Locale.ROOT);
         return backend.equals("sqlite") || backend.equals("mysql") || backend.equals("h2");
+    }
+
+    private static boolean isUniauthBackend() {
+        return Config.getString("authentication.password.method").toLowerCase(Locale.ROOT).equals("uniauth");
+    }
+
+    private static String generateTemporaryUniauthPassword() {
+        byte[] bytes = new byte[24];
+        SECURE_RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
     private static PlayerProfile applyAuthPolicy(String username, PlayerProfile profile) {
         String authMethod = profile.authentication;
         LoginSession session = LoginSession.getSession(username);
         DatabaseHandler db = DatabaseHandler.getInstance();
-
-        if (!isLocalPasswordBackend()) {
-            db.setPreferred(username, authMethod);
-            session.setAuthMethod(authMethod);
-            if (!db.getAuthMethods(username).contains(authMethod)) {
-                session.setVerifyPassword(true);
-                session.setPasswordIntroMessage(Message.getMessage("auth.yggdrasil-new-need-verification").add("auth_method", authMethod));
-            }
-            return profile;
-        }
+        boolean uniauthBackend = isUniauthBackend();
 
         AbstractAuthenticator.UserStatus status = AbstractAuthenticator.getInstance().fetchStatus(username);
         List<String> verifiedMethods = db.getAuthMethods(username);
         boolean methodVerified = verifiedMethods.contains(authMethod);
+        boolean hasPassword = isLocalPasswordBackend() ? db.hasPassword(username) : db.isPasswordSet(username);
 
         if (status == AbstractAuthenticator.UserStatus.NOT_EXIST) {
-            db.ensureImportedUser(username);
+            if (uniauthBackend) {
+                var registerResult = AbstractAuthenticator.getInstance().forceRegister(username, generateTemporaryUniauthPassword());
+                if (registerResult != AbstractAuthenticator.RequestResult.SUCCESS
+                        && registerResult != AbstractAuthenticator.RequestResult.USER_ALREADY_EXISTS) {
+                    Logger.warn("Failed to auto-register premium/littleskin user " + username + " in uniauth backend: " + registerResult);
+                    session.setDisconnectMessage(Message.getMessage("auth.failed-to-login"));
+                    return null;
+                }
+                if (registerResult == AbstractAuthenticator.RequestResult.SUCCESS) {
+                    db.setPasswordSet(username, false);
+                }
+            } else if (isLocalPasswordBackend()) {
+                db.ensureImportedUser(username);
+            }
             db.setPreferred(username, authMethod);
             db.ensureAuthMethod(username, authMethod);
             session.setAuthMethod(authMethod);
@@ -112,7 +132,7 @@ public class YggdrasilAuthenticator {
 
         // Backward-compat for existing imported users: bootstrap first verified method once
         // so they are not locked out before having a chance to set a password.
-        if (status == AbstractAuthenticator.UserStatus.IMPORTED && verifiedMethods.isEmpty() && !db.hasPassword(username)) {
+        if (status == AbstractAuthenticator.UserStatus.IMPORTED && verifiedMethods.isEmpty() && !hasPassword) {
             db.setPreferred(username, authMethod);
             db.ensureAuthMethod(username, authMethod);
             session.setAuthMethod(authMethod);
@@ -120,7 +140,7 @@ public class YggdrasilAuthenticator {
             return profile;
         }
 
-        if (!methodVerified && !db.hasPassword(username)) {
+        if (!methodVerified && !hasPassword) {
             session.setDisconnectMessage(Message.getMessage("auth.bind-requires-password"));
             return null;
         }

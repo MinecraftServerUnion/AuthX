@@ -20,6 +20,10 @@ public class PasswordCommandExecutor {
         if (!Config.getBoolean("command.change-password.need-old-password")) {
             return false;
         }
+        String backend = Config.getString("authentication.password.method").toLowerCase(Locale.ROOT);
+        if (backend.equals("uniauth")) {
+            return DatabaseHandler.getInstance().isPasswordSet(username);
+        }
         if (!isLocalPasswordBackend()) {
             return true;
         }

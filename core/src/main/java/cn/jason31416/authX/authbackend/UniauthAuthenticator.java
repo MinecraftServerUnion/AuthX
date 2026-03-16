@@ -94,6 +94,7 @@ public class UniauthAuthenticator extends AbstractAuthenticator {
     public RequestResult forceRegister(String username, String password) {
         var res = UniAuthAPIClient.registerWithoutEmail(username, password);
         if(res == UniAuthAPIClient.AuthResult.SUCCESS){
+            DatabaseHandler.getInstance().setPasswordSet(username, true);
             return RequestResult.SUCCESS;
         }else if(res == UniAuthAPIClient.AuthResult.ALREADY_REGISTERED){
             return RequestResult.USER_ALREADY_EXISTS;
@@ -112,6 +113,7 @@ public class UniauthAuthenticator extends AbstractAuthenticator {
             default -> RequestResult.UNKNOWN_ERROR;
         };
         if(ret==RequestResult.SUCCESS||ret==RequestResult.EMAIL_NOT_LINKED){
+            DatabaseHandler.getInstance().setPasswordSet(username, true);
             if(Config.getConfigTree().getBoolean("authentication.password.uniauth.perform-local-backup", true)){
                 recordEncrypted(username, password);
             }
@@ -128,12 +130,19 @@ public class UniauthAuthenticator extends AbstractAuthenticator {
     public RequestResult changePassword(String username, String newPassword) {
         var res = UniAuthAPIClient.forceResetPassword(username, newPassword);
         if(!res.isEmpty()) Logger.warn("Failed to change password for user: "+res);
-        return res.isEmpty()?RequestResult.SUCCESS:RequestResult.UNKNOWN_ERROR;
+        if (res.isEmpty()) {
+            DatabaseHandler.getInstance().setPasswordSet(username, true);
+            return RequestResult.SUCCESS;
+        }
+        return RequestResult.UNKNOWN_ERROR;
     }
 
     public RequestResult changePasswordWithOld(String username, String oldPassword, String newPassword){
         var res = UniAuthAPIClient.resetPassword(username, oldPassword, newPassword);
-        if(res) return RequestResult.SUCCESS;
+        if(res) {
+            DatabaseHandler.getInstance().setPasswordSet(username, true);
+            return RequestResult.SUCCESS;
+        }
         return RequestResult.INVALID_PASSWORD;
     }
 }
