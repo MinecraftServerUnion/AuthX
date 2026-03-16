@@ -141,6 +141,9 @@ public class EventListener {
             if (Config.getBoolean("log.pre-login"))
                 Logger.info("Player " + event.getUsername() + " (" + event.getUniqueId() + ") Joined the server! Detected as " + cs + " authentication.");
         }catch (Throwable e){
+            event.setResult(PreLoginEvent.PreLoginComponentResult.denied(
+                    Message.getMessage("auth.failed-to-login").toComponent()
+            ));
             Logger.error("Error when prelogin: "+e.getMessage());
             e.printStackTrace();
         }
