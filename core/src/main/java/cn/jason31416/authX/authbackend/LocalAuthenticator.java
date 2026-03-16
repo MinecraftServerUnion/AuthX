@@ -3,6 +3,9 @@ package cn.jason31416.authX.authbackend;
 import at.favre.lib.crypto.bcrypt.BCrypt;
 import cn.jason31416.authx.api.AbstractAuthenticator;
 import cn.jason31416.authX.handler.DatabaseHandler;
+import cn.jason31416.authX.handler.LoginSession;
+import cn.jason31416.authX.util.Config;
+import com.velocitypowered.api.util.UuidUtils;
 import lombok.SneakyThrows;
 
 import java.nio.charset.StandardCharsets;
@@ -52,6 +55,13 @@ public class LocalAuthenticator extends AbstractAuthenticator {
             stmt.setString(3, "bcrypt");
             stmt.setString(4, null);
             stmt.execute();
+
+            if (Config.getConfigTree().getBoolean("authentication.auto-set-uuid-on-register", true)) {
+                var session = LoginSession.getSessionMap().get(username);
+                var uuid = session == null ? UuidUtils.generateOfflinePlayerUuid(username) : session.getUuid();
+                DatabaseHandler.getInstance().setUUID(username, uuid);
+            }
+
             return RequestResult.SUCCESS;
         }
     }

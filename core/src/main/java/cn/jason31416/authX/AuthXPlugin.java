@@ -7,6 +7,7 @@ import cn.jason31416.authX.authbackend.LocalAuthenticator;
 import cn.jason31416.authX.authbackend.UniauthAuthenticator;
 import cn.jason31416.authX.command.AccountCommandHandler;
 import cn.jason31416.authX.command.AdminCommandHandler;
+import cn.jason31416.authX.command.ChangePassCommandHandler;
 import cn.jason31416.authX.handler.DatabaseHandler;
 import cn.jason31416.authX.handler.EventListener;
 import cn.jason31416.authX.handler.LimboHandler;
@@ -31,6 +32,9 @@ import net.elytrium.limboapi.api.chunk.VirtualWorld;
 import net.elytrium.limboapi.api.file.BuiltInWorldFileType;
 import net.elytrium.limboapi.api.file.WorldFile;
 import net.elytrium.limboapi.api.player.GameMode;
+import org.bstats.charts.SimplePie;
+import org.bstats.charts.SingleLineChart;
+import org.bstats.velocity.Metrics;
 import org.slf4j.Logger;
 
 import javax.annotation.Nonnull;
@@ -57,6 +61,9 @@ public class AuthXPlugin implements AuthXApi {
     private final ProxyServer proxy;
     @Getter
     private final File dataDirectory;
+
+    @Getter
+    private final Metrics.Factory metricsFactory;
 
     public static Scheduler getScheduler() {
         return instance.proxy.getScheduler();
@@ -99,16 +106,23 @@ public class AuthXPlugin implements AuthXApi {
             case "uniauth" -> new UniauthAuthenticator();
             case "sqlite" -> new LocalAuthenticator();
             case "mysql" -> new LocalAuthenticator();
+            case "h2" -> new LocalAuthenticator();
             default -> throw new IllegalArgumentException("Invalid authentication.password.method: " + Config.getString("authentication.password.method"));
         };
         AbstractAuthenticator.getInstance().initialize();
+
+        if(Config.getConfigTree().getBoolean("bstats", false)) {
+            int pluginId = 30252;
+            Metrics metrics = metricsFactory.make(this, pluginId);
+        }
     }
 
     @Inject
-    public AuthXPlugin(@Nonnull ProxyServer proxy, @Nonnull Logger logger, @Nonnull @DataDirectory Path dataDirectory) {
+    public AuthXPlugin(@Nonnull ProxyServer proxy, @Nonnull Logger logger, @Nonnull @DataDirectory Path dataDirectory, Metrics.Factory metricsFactory) {
         this.proxy = proxy;
         this.logger = logger;
         this.dataDirectory = dataDirectory.toFile();
+        this.metricsFactory = metricsFactory;
 
         instance = this;
     }
@@ -129,6 +143,10 @@ public class AuthXPlugin implements AuthXApi {
         proxy.getCommandManager().register(
                 proxy.getCommandManager().metaBuilder("account").plugin(this).build(),
                 AccountCommandHandler.INSTANCE
+        );
+        proxy.getCommandManager().register(
+                proxy.getCommandManager().metaBuilder("changepass").plugin(this).build(),
+                ChangePassCommandHandler.INSTANCE
         );
 
         getScheduler().buildTask(this, () -> {

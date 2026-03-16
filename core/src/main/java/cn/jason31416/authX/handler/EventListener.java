@@ -10,9 +10,7 @@ import cn.jason31416.authX.util.Logger;
 import com.velocitypowered.api.event.PostOrder;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
-import com.velocitypowered.api.event.connection.LoginEvent;
 import com.velocitypowered.api.event.connection.PreLoginEvent;
-import com.velocitypowered.api.event.player.CookieReceiveEvent;
 import com.velocitypowered.api.event.player.GameProfileRequestEvent;
 import com.velocitypowered.api.event.player.PlayerChatEvent;
 import com.velocitypowered.api.util.GameProfile;
@@ -21,7 +19,6 @@ import com.velocitypowered.proxy.connection.client.InitialInboundConnection;
 import com.velocitypowered.proxy.connection.client.LoginInboundConnection;
 import lombok.SneakyThrows;
 import net.elytrium.limboapi.api.event.LoginLimboRegisterEvent;
-import net.kyori.adventure.key.Key;
 
 import javax.annotation.Nonnull;
 import java.lang.invoke.MethodHandle;
@@ -92,7 +89,9 @@ public class EventListener {
 
             if (accountStatus == AbstractAuthenticator.UserStatus.IMPORTED) {
                 event.setResult(PreLoginEvent.PreLoginComponentResult.forceOnlineMode());
-                session.setVerifyPassword(true);
+                String backend = Config.getString("authentication.password.method").toLowerCase(Locale.ROOT);
+                boolean localBackend = backend.equals("sqlite") || backend.equals("mysql") || backend.equals("h2");
+                session.setVerifyPassword(!localBackend);
                 session.setEnforcePrimaryMethod(true);
                 cs = "imported";
             } else {

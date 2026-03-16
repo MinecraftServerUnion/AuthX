@@ -279,7 +279,10 @@ public class XLoginSessionHandler {
                                         }
                                     });
                                 } else {
-                                    this.inbound.disconnect(Message.getMessage("authentication.invalid-session").toComponent());
+                                    Message disconnectMessage = session.getDisconnectMessage() == null
+                                            ? Message.getMessage("auth.invalid-session")
+                                            : session.getDisconnectMessage();
+                                    this.inbound.disconnect(disconnectMessage.toComponent());
                                 }
                                 return;
                             }

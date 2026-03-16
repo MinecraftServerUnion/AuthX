@@ -31,6 +31,9 @@ public class LoginSession implements cn.jason31416.authx.api.ILoginSession {
     @Setter
     private Message passwordIntroMessage = null;
 
+    @Setter
+    private Message disconnectMessage = null;
+
     public LoginSession(String username, UUID uuid) {
         this.username = username;
         this.uuid = uuid;

@@ -1,6 +1,7 @@
 package cn.jason31416.authX.handler;
 
 import cn.jason31416.authX.message.Message;
+import cn.jason31416.authx.api.AbstractAuthenticator;
 import cn.jason31416.authX.util.Config;
 import cn.jason31416.authX.util.Logger;
 import cn.jason31416.authX.util.MapTree;
@@ -65,13 +66,6 @@ public class YggdrasilAuthenticator {
             if(response.statusCode() == 200) {
                 var ret = new Gson().fromJson(response.body(), PlayerProfile.class);
                 ret.authentication = authMethod;
-                var session = LoginSession.getSession(username);
-                DatabaseHandler.getInstance().setPreferred(username, authMethod);
-                session.setAuthMethod(authMethod);
-                if(!DatabaseHandler.getInstance().getAuthMethods(username).contains(authMethod)){
-                    session.setVerifyPassword(true);
-                    session.setPasswordIntroMessage(Message.getMessage("auth.yggdrasil-new-need-verification").add("auth_method", authMethod));
-                }
                 future.complete(ret);
             }else{
                 future.complete(null);
@@ -79,6 +73,71 @@ public class YggdrasilAuthenticator {
         });
         return future;
     }
+
+    private static boolean isLocalPasswordBackend() {
+        String backend = Config.getString("authentication.password.method").toLowerCase();
+        return backend.equals("sqlite") || backend.equals("mysql") || backend.equals("h2");
+    }
+
+    private static PlayerProfile applyAuthPolicy(String username, PlayerProfile profile) {
+        String authMethod = profile.authentication;
+        LoginSession session = LoginSession.getSession(username);
+        DatabaseHandler db = DatabaseHandler.getInstance();
+
+        if (!isLocalPasswordBackend()) {
+            db.setPreferred(username, authMethod);
+            session.setAuthMethod(authMethod);
+            if (!db.getAuthMethods(username).contains(authMethod)) {
+                session.setVerifyPassword(true);
+                session.setPasswordIntroMessage(Message.getMessage("auth.yggdrasil-new-need-verification").add("auth_method", authMethod));
+            }
+            return profile;
+        }
+
+        AbstractAuthenticator.UserStatus status = AbstractAuthenticator.getInstance().fetchStatus(username);
+        List<String> verifiedMethods = db.getAuthMethods(username);
+        boolean methodVerified = verifiedMethods.contains(authMethod);
+
+        if (status == AbstractAuthenticator.UserStatus.NOT_EXIST) {
+            db.ensureImportedUser(username);
+            db.setPreferred(username, authMethod);
+            db.ensureAuthMethod(username, authMethod);
+            session.setAuthMethod(authMethod);
+            if (Config.getConfigTree().getBoolean("authentication.auto-set-uuid-on-register", true)) {
+                db.setUUID(username, session.getUuid());
+            }
+            session.setVerifyPassword(false);
+            return profile;
+        }
+
+        // Backward-compat for existing imported users: bootstrap first verified method once
+        // so they are not locked out before having a chance to set a password.
+        if (status == AbstractAuthenticator.UserStatus.IMPORTED && verifiedMethods.isEmpty() && !db.hasPassword(username)) {
+            db.setPreferred(username, authMethod);
+            db.ensureAuthMethod(username, authMethod);
+            session.setAuthMethod(authMethod);
+            session.setVerifyPassword(false);
+            return profile;
+        }
+
+        if (!methodVerified && !db.hasPassword(username)) {
+            session.setDisconnectMessage(Message.getMessage("auth.bind-requires-password"));
+            return null;
+        }
+
+        db.setPreferred(username, authMethod);
+        session.setAuthMethod(authMethod);
+
+        if (!methodVerified) {
+            session.setVerifyPassword(true);
+            session.setPasswordIntroMessage(Message.getMessage("auth.yggdrasil-new-need-verification").add("auth_method", authMethod));
+            return profile;
+        }
+
+        session.setVerifyPassword(false);
+        return profile;
+    }
+
     public static PlayerProfile authenticate(String username, String serverID, String ip) {
         System.out.println(username+" "+serverID+" "+ip);
         MapTree authServers = Config.getSection("authentication.yggdrasil.auth-servers");
@@ -88,8 +147,11 @@ public class YggdrasilAuthenticator {
                 String url = authServers.get(preferredMethod) + "session/minecraft/hasJoined?username=" + username + "&serverId=" + serverID;
                 if (Config.getBoolean("authentication.yggdrasil.verify-ip")) url += "&ip=" + ip;
                 var res = authenticateVia(username, preferredMethod, url);
-                if (res.get() != null){
-                    return res.get();
+                if (res.get() != null) {
+                    PlayerProfile accepted = applyAuthPolicy(username, res.get());
+                    if (accepted != null) {
+                        return accepted;
+                    }
                 }
             }
             var session = LoginSession.getSessionMap().get(username);
@@ -109,7 +171,10 @@ public class YggdrasilAuthenticator {
 
                 for (CompletableFuture<PlayerProfile> future : futures) {
                     if (future.isDone() && future.get() != null) {
-                        return future.get();
+                        PlayerProfile accepted = applyAuthPolicy(username, future.get());
+                        if (accepted != null) {
+                            return accepted;
+                        }
                     }
                 }
             }

@@ -11,6 +11,7 @@ auth:
   timeout: "&c登录超时! 请重新进入服务器哦"
 
   yggdrasil-new-need-verification: "&a这是你第一次使用 %auth_method% 进入服务器，需要进行密码验证来确保你的安全！"
+  bind-requires-password: "&e当前账号已锁定为现有登录方式。请先使用 &b/changepass <新密码> &e以绑定其他登录方式。"
 
   auth-bar-name: "&f剩余 %time% 秒"
 
@@ -52,8 +53,8 @@ command:
 
   change-password:
     success: "&a成功修改了密码! 请一定要牢牢记住哦!"
-    invalid-format-need-old-password: "&c错误的格式! 请使用 &e/account changepass <旧密码> <新密码>"
-    invalid-format-no-old-password: "&c错误的格式! 请使用 &e/account changepass <新密码>"
+    invalid-format-need-old-password: "&c错误的格式! 请使用 &e/changepass <旧密码> <新密码>"
+    invalid-format-no-old-password: "&c错误的格式! 请使用 &e/changepass <新密码>"
     invalid-password: "&c错误的密码! 是不是记错了呢~"
     invalid-password-format: "&c密码不符合要求! 换个安全又好记的密码吧~"
 
@@ -71,6 +72,13 @@ command:
     invalid-format: "&c错误的格式! 请使用 &e/authx setuuid <玩家用户名> [UUID]"
     success: "&a成功将 %player% 的 UUID 设置为 %uuid% !"
     invalid-uuid: "&c无效的 UUID 格式! 请检查 UUID 是否正确!"
+
+  migrate-ml:
+    invalid-format: "&c错误的格式! 请使用 &e/authx migrateml [dryrun]"
+    already-running: "&e已有迁移任务在运行中，请稍后再试。"
+    start: "&a已开始 MultiLogin UUID 迁移任务（%mode%）。"
+    success: "&a迁移 %mode% 完成：总数=%total%，导入=%imported%，已存在跳过=%skipped_existing%，无效跳过=%skipped_invalid%，错误=%errors%，耗时=%duration%s。"
+    failed: "&c迁移失败：%reason%"
 
   recover:
     failed: "&c尝试恢复密码时遇到错误：%reason%"

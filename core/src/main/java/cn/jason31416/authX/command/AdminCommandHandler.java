@@ -5,6 +5,7 @@ import cn.jason31416.authx.api.AbstractAuthenticator;
 import cn.jason31416.authX.authbackend.UniauthAuthenticator;
 import cn.jason31416.authX.handler.DatabaseHandler;
 import cn.jason31416.authX.handler.EventListener;
+import cn.jason31416.authX.handler.MultiLoginUuidMigrator;
 import cn.jason31416.authX.message.Message;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
@@ -97,6 +98,38 @@ public class AdminCommandHandler implements SimpleCommand {
                 EventListener.loginPremiumFailedCache.clear();
                 invocation.source().sendMessage(new Message("&aCleared user authentication cache!").toComponent());
             }
+            case "migrateml" -> {
+                boolean dryRun = invocation.arguments().length >= 2 && invocation.arguments()[1].equalsIgnoreCase("dryrun");
+                if (invocation.arguments().length >= 2 && !dryRun) {
+                    invocation.source().sendMessage(Message.getMessage("command.migrate-ml.invalid-format").toComponent());
+                    return;
+                }
+                if (MultiLoginUuidMigrator.isRunning()) {
+                    invocation.source().sendMessage(Message.getMessage("command.migrate-ml.already-running").toComponent());
+                    return;
+                }
+                invocation.source().sendMessage(Message.getMessage("command.migrate-ml.start")
+                        .add("mode", dryRun ? "dryrun" : "import")
+                        .toComponent());
+                AuthXPlugin.getScheduler().buildTask(AuthXPlugin.getInstance(), () -> {
+                    try {
+                        var result = MultiLoginUuidMigrator.migrate(dryRun);
+                        invocation.source().sendMessage(Message.getMessage("command.migrate-ml.success")
+                                .add("mode", result.dryRun() ? "dryrun" : "import")
+                                .add("total", result.total())
+                                .add("imported", result.imported())
+                                .add("skipped_existing", result.skippedExisting())
+                                .add("skipped_invalid", result.skippedInvalid())
+                                .add("errors", result.errors())
+                                .add("duration", String.format("%.2f", result.durationMs() / 1000.0))
+                                .toComponent());
+                    } catch (Exception e) {
+                        invocation.source().sendMessage(Message.getMessage("command.migrate-ml.failed")
+                                .add("reason", e.getMessage())
+                                .toComponent());
+                    }
+                }).schedule();
+            }
             case "" -> {
                 invocation.source().sendMessage(new Message("&aRunning &b&lAuthX v2 &aby Jason31416!").toComponent());
             }
@@ -108,12 +141,13 @@ public class AdminCommandHandler implements SimpleCommand {
     @Override
     public List<String> suggest(final @Nonnull Invocation invocation) {
         if(invocation.arguments().length<=1)
-            return List.of("changepass", "unregister", "reload", "setuuid", "clearcache");
+            return List.of("changepass", "unregister", "reload", "setuuid", "clearcache", "migrateml");
         else if(invocation.arguments().length == 2){
             return switch (invocation.arguments()[0]){
                 case "changepass" -> List.of(Message.getMessage("tab-complete.force-change-password.player").toString());
                 case "unregister" -> List.of(Message.getMessage("command.force-change-password.new").toString());
                 case "setuuid" -> List.of(Message.getMessage("tab-complete.set-uuid.player").toString());
+                case "migrateml" -> List.of("dryrun");
                 default -> List.of();
             };
         }else if(invocation.arguments().length == 3){

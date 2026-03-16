@@ -1,7 +1,16 @@
 
 lang: en-us
 
+driver:
+  # Maven repository base URL used to auto-download JDBC drivers on demand.
+  # Only this source is configurable.
+  maven-source: "https://repo1.maven.org/maven2/"
+
 authentication:
+  # If true, AuthX will automatically save the player's login UUID into uuiddata when a NEW account is created.
+  # This applies to both password registration and premium/littleskin auto-registration.
+  auto-set-uuid-on-register: true
+
   # The method used to determine if the player is using one of the listed auth servers.
   # If falsely recognized user as premium, the user will be disconnected but the next time they join, they will be able to login via password
   # If falsely recognized user as offline, the user will just need to use password authentication.
@@ -32,7 +41,7 @@ authentication:
     auth-time: 180 # seconds
     attempt-count: 3
 
-    method: SQLITE # SQLITE, MYSQL, UNIAUTH
+    method: H2 # H2, SQLITE, MYSQL, UNIAUTH
 
     mysql:
       host: "localhost"
@@ -44,7 +53,7 @@ authentication:
       # "useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
       parameters: ""
 
-    # If you don't know what is this or don't have an uniauth provider, please don't try it and use SQLITE instead.
+    # If you don't know what is this or don't have an uniauth provider, please don't try it and use SQLITE/MYSQL instead.
     uniauth:
       url: "http://localhost:8500/"
       api-key: ""
@@ -72,10 +81,6 @@ limbo-world:
     pitch: 0
   world-loader: # This is still in development, only VOID is available for now.
     type: VOID
-#    file-name: "example.schem"
-#    offset-x: 0
-#    offset-y: 0
-#    offset-z: 0
 
 command:
   change-password:
@@ -85,3 +90,33 @@ regex:
   username-regex: ".*" # Suggested regex: "[a-zA-Z0-9_]{3,20}"
 #  email-regex: ".+@[a-zA-Z0-9_\\-\\.]+\\.[a-zA-Z]{2,}" # The regex pattern for email validation. The default option is a common email pattern.
   password-regex: "[!-~]{3,20}" # The regex pattern for password validation. The default option includes any ASCII character from ! to ~.
+
+migration:
+  multilogin:
+    # Start migration with command:
+    # /authx migrateml [dryrun]
+
+    # Source backend of MultiLogin database. Can be: MYSQL, H2
+    backend: MYSQL
+
+    # MultiLogin table prefix. AuthX will read from: <table-prefix>_in_game_profile_v3
+    table-prefix: "multilogin"
+
+    log-progress: true
+
+    mysql:
+      host: "localhost"
+      port: 3306
+      database: "multilogin"
+      username: "root"
+      password: ""
+      parameters: ""
+
+    h2:
+      # Example: /path/to/multilogin-db
+      path: ""
+      username: "root"
+      password: ""
+      parameters: "TRACE_LEVEL_FILE=0;TRACE_LEVEL_SYSTEM_OUT=0"
+
+bstats: true

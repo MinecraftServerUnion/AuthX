@@ -11,6 +11,7 @@ auth:
   timeout: "&cLogin timed out! Please rejoin the server."
 
   yggdrasil-new-need-verification: "&aThis is your first time joining the server with %auth_method%, a password verification is required to ensure your security!"
+  bind-requires-password: "&eThis account is locked to your current login method. Use &b/changepass <new password> &eto enable binding other login methods."
 
   auth-bar-name: "&f%time% seconds remaining"
 
@@ -52,8 +53,8 @@ command:
 
   change-password:
     success: "&aPassword changed successfully! Please be sure to remember it!"
-    invalid-format-need-old-password: "&cIncorrect format! Use &e/account changepass <old password> <new password>"
-    invalid-format-no-old-password: "&cIncorrect format! Use &e/account changepass <new password>"
+    invalid-format-need-old-password: "&cIncorrect format! Use &e/changepass <old password> <new password>"
+    invalid-format-no-old-password: "&cIncorrect format! Use &e/changepass <new password>"
     invalid-password: "&cIncorrect password! Did you perhaps forget?"
     invalid-password-format: "&cPassword does not meet the requirements! Please choose a secure and memorable password."
 
@@ -71,3 +72,10 @@ command:
     invalid-format: "&cIncorrect format! Use &e/authx setuuid <player username> [UUID]"
     success: "&aSuccessfully set %player%'s UUID to %uuid%!"
     invalid-uuid: "&cInvalid UUID format! Please check if the UUID is correct."
+
+  migrate-ml:
+    invalid-format: "&cIncorrect format! Use &e/authx migrateml [dryrun]"
+    already-running: "&eA migration task is already running. Please wait for it to complete."
+    start: "&aStarted MultiLogin UUID migration (%mode%)."
+    success: "&aMigration %mode% completed: total=%total%, imported=%imported%, skipped_existing=%skipped_existing%, skipped_invalid=%skipped_invalid%, errors=%errors%, duration=%duration%s."
+    failed: "&cMigration failed: %reason%"
