@@ -25,13 +25,9 @@ public class UniauthAuthenticator extends AbstractAuthenticator {
     private void recordEncrypted(String username, String password){
         String publicKey = UniAuthAPIClient.fetchPublicKey(false);
         String hashed = UniAuthAPIClient.hashWithFormat(publicKey, "SHA-256").substring(0, 8);
-        try(var conn = DatabaseHandler.getInstance().getConnection()){
-            var st = conn.prepareStatement("REPLACE INTO passwordbackup (username, password, pubkeyhash) VALUES (?,?,?)");
-            st.setString(1, username);
-            st.setString(2, RSAUtil.encryptByPublicKey(BCrypt.withDefaults().hashToString(10, password.toCharArray()), publicKey));
-            st.setString(3, hashed);
-            st.executeUpdate();
-        }
+        String encryptedPassword = RSAUtil.encryptByPublicKey(
+                BCrypt.withDefaults().hashToString(10, password.toCharArray()), publicKey);
+        DatabaseHandler.getInstance().savePasswordBackup(username, encryptedPassword, hashed);
     }
     @SneakyThrows
     public static int attemptRecovery(){
@@ -65,12 +61,7 @@ public class UniauthAuthenticator extends AbstractAuthenticator {
                         continue;
                     }
                     var decryptedPassword = RSAUtil.decryptByPrivateKey(encryptedPassword, privkey);
-                    var stmt = conn.prepareStatement("REPLACE INTO users (username, password, format, email) VALUES (?,?,?,?)");
-                    stmt.setString(1, username);
-                    stmt.setString(2, decryptedPassword);
-                    stmt.setString(3, "bcrypt");
-                    stmt.setString(4, null);
-                    stmt.execute();
+                    DatabaseHandler.getInstance().saveRecoveredUser(conn, username, decryptedPassword);
                     cnt++;
                 }catch (Exception e){
                     Logger.error("Failed to recover password for user "+username+": "+e.getMessage());

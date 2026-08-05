@@ -13,6 +13,7 @@ import lombok.SneakyThrows;
 import javax.annotation.Nullable;
 import java.io.File;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Locale;
@@ -45,7 +46,9 @@ public class DatabaseHandler implements IDatabaseHandler {
         var method = Config.getString("authentication.password.method").toLowerCase(Locale.ROOT);
         databaseType = switch (method) {
             case "mysql" -> DatabaseType.MYSQL;
-            case "sqlite" -> DatabaseType.SQLITE;
+            // UniAuth stores credentials remotely, but still needs the historical
+            // SQLite database for UUIDs, auth methods, and encrypted recovery data.
+            case "sqlite", "uniauth" -> DatabaseType.SQLITE;
             case "h2" -> DatabaseType.H2;
             default -> throw new IllegalArgumentException("Unsupported authentication.password.method: " + method);
         };
@@ -54,17 +57,27 @@ public class DatabaseHandler implements IDatabaseHandler {
         try (Connection connection = getConnection()) {
             connection.prepareStatement("CREATE TABLE IF NOT EXISTS authmethods (username VARCHAR(255) PRIMARY KEY, verified VARCHAR(255), preferred VARCHAR(255), modkey VARCHAR(255) default NULL, password_set BOOLEAN DEFAULT FALSE)").execute();
             connection.prepareStatement("CREATE TABLE IF NOT EXISTS uuiddata (username VARCHAR(255) PRIMARY KEY, uuid VARCHAR(255))").execute();
-            connection.prepareStatement("CREATE TABLE IF NOT EXISTS passwordbackup (username VARCHAR(255) PRIMARY KEY, password VARCHAR(255), pubkeyhash VARCHAR(10))").execute();
+            connection.prepareStatement("CREATE TABLE IF NOT EXISTS passwordbackup (username VARCHAR(255) PRIMARY KEY, password TEXT, pubkeyhash VARCHAR(10))").execute();
             ensurePasswordSetColumn(connection);
         }
     }
 
-    private void ensurePasswordSetColumn(Connection connection) {
-        try {
+    private void ensurePasswordSetColumn(Connection connection) throws SQLException {
+        if (!hasColumn(connection, "authmethods", "password_set")) {
             connection.prepareStatement("ALTER TABLE authmethods ADD COLUMN password_set BOOLEAN DEFAULT FALSE").execute();
-        } catch (SQLException ignored) {
-            // Column already exists on upgraded installs.
         }
+    }
+
+    private boolean hasColumn(Connection connection, String tableName, String columnName) throws SQLException {
+        try (ResultSet columns = connection.getMetaData().getColumns(connection.getCatalog(), null, "%", "%")) {
+            while (columns.next()) {
+                if (tableName.equalsIgnoreCase(columns.getString("TABLE_NAME"))
+                        && columnName.equalsIgnoreCase(columns.getString("COLUMN_NAME"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private HikariConfig buildDataSourceConfig(DatabaseType databaseType) {
@@ -199,10 +212,15 @@ public class DatabaseHandler implements IDatabaseHandler {
                     st.execute();
                 }
                 case H2 -> {
-                    var st = connection.prepareStatement("MERGE INTO authmethods (username, verified, preferred) KEY(username) VALUES (?,?,?)");
+                    // Avoid MERGE here to prevent resetting existing verified list on conflict.
+                    var st = connection.prepareStatement("INSERT INTO authmethods (username, verified, preferred) SELECT ?, '', NULL WHERE NOT EXISTS (SELECT 1 FROM authmethods WHERE username = ?)");
                     st.setString(1, username);
-                    st.setString(2, "");
-                    st.setString(3, method);
+                    st.setString(2, username);
+                    st.execute();
+
+                    st = connection.prepareStatement("UPDATE authmethods SET preferred =? WHERE username =?");
+                    st.setString(1, method);
+                    st.setString(2, username);
                     st.execute();
                 }
             }
@@ -231,11 +249,14 @@ public class DatabaseHandler implements IDatabaseHandler {
             String sql = switch (databaseType) {
                 case MYSQL -> "INSERT IGNORE INTO users (username, password, email, format) VALUES (?, NULL, NULL, ?)";
                 case SQLITE -> "INSERT OR IGNORE INTO users (username, password, email, format) VALUES (?, NULL, NULL, ?)";
-                case H2 -> "MERGE INTO users (username, password, email, format) KEY(username) VALUES (?, NULL, NULL, ?)";
+                case H2 -> "INSERT INTO users (username, password, email, format) SELECT ?, NULL, NULL, ? WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = ?)";
             };
             var st = connection.prepareStatement(sql);
             st.setString(1, username);
             st.setString(2, "none");
+            if (databaseType == DatabaseType.H2) {
+                st.setString(3, username);
+            }
             st.execute();
         }
     }
@@ -259,10 +280,13 @@ public class DatabaseHandler implements IDatabaseHandler {
             String ensureRowSql = switch (databaseType) {
                 case MYSQL -> "INSERT IGNORE INTO authmethods (username, verified, preferred) VALUES (?, '', NULL)";
                 case SQLITE -> "INSERT OR IGNORE INTO authmethods (username, verified, preferred) VALUES (?, '', NULL)";
-                case H2 -> "MERGE INTO authmethods (username, verified, preferred) KEY(username) VALUES (?, '', NULL)";
+                case H2 -> "INSERT INTO authmethods (username, verified, preferred) SELECT ?, '', NULL WHERE NOT EXISTS (SELECT 1 FROM authmethods WHERE username = ?)";
             };
             var ensureStmt = connection.prepareStatement(ensureRowSql);
             ensureStmt.setString(1, username);
+            if (databaseType == DatabaseType.H2) {
+                ensureStmt.setString(2, username);
+            }
             ensureStmt.execute();
         }
 
@@ -277,11 +301,14 @@ public class DatabaseHandler implements IDatabaseHandler {
             String ensureRowSql = switch (databaseType) {
                 case MYSQL -> "INSERT IGNORE INTO authmethods (username, verified, preferred, password_set) VALUES (?, '', NULL, ?)";
                 case SQLITE -> "INSERT OR IGNORE INTO authmethods (username, verified, preferred, password_set) VALUES (?, '', NULL, ?)";
-                case H2 -> "MERGE INTO authmethods (username, verified, preferred, password_set) KEY(username) VALUES (?, '', NULL, ?)";
+                case H2 -> "INSERT INTO authmethods (username, verified, preferred, password_set) SELECT ?, '', NULL, ? WHERE NOT EXISTS (SELECT 1 FROM authmethods WHERE username = ?)";
             };
             var ensureStmt = connection.prepareStatement(ensureRowSql);
             ensureStmt.setString(1, username);
             ensureStmt.setBoolean(2, passwordSet);
+            if (databaseType == DatabaseType.H2) {
+                ensureStmt.setString(3, username);
+            }
             ensureStmt.execute();
 
             var updateStmt = connection.prepareStatement("UPDATE authmethods SET password_set =? WHERE username =?");
@@ -301,6 +328,39 @@ public class DatabaseHandler implements IDatabaseHandler {
                 return false;
             }
             return rs.getBoolean("password_set");
+        }
+    }
+
+    @SneakyThrows
+    public void savePasswordBackup(String username, String encryptedPassword, String publicKeyHash) {
+        try (Connection connection = getConnection()) {
+            String sql = switch (databaseType) {
+                case MYSQL -> "INSERT INTO passwordbackup (username, password, pubkeyhash) VALUES (?,?,?) ON DUPLICATE KEY UPDATE password = VALUES(password), pubkeyhash = VALUES(pubkeyhash)";
+                case SQLITE -> "INSERT INTO passwordbackup (username, password, pubkeyhash) VALUES (?,?,?) ON CONFLICT(username) DO UPDATE SET password = excluded.password, pubkeyhash = excluded.pubkeyhash";
+                case H2 -> "MERGE INTO passwordbackup (username, password, pubkeyhash) KEY(username) VALUES (?,?,?)";
+            };
+            try (var statement = connection.prepareStatement(sql)) {
+                statement.setString(1, username);
+                statement.setString(2, encryptedPassword);
+                statement.setString(3, publicKeyHash);
+                statement.executeUpdate();
+            }
+        }
+    }
+
+    @SneakyThrows
+    public void saveRecoveredUser(Connection connection, String username, String passwordHash) {
+        String sql = switch (databaseType) {
+            case MYSQL -> "INSERT INTO users (username, password, format, email) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE password = VALUES(password), format = VALUES(format), email = VALUES(email)";
+            case SQLITE -> "INSERT INTO users (username, password, format, email) VALUES (?,?,?,?) ON CONFLICT(username) DO UPDATE SET password = excluded.password, format = excluded.format, email = excluded.email";
+            case H2 -> "MERGE INTO users (username, password, format, email) KEY(username) VALUES (?,?,?,?)";
+        };
+        try (var statement = connection.prepareStatement(sql)) {
+            statement.setString(1, username);
+            statement.setString(2, passwordHash);
+            statement.setString(3, "bcrypt");
+            statement.setString(4, null);
+            statement.executeUpdate();
         }
     }
 

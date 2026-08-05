@@ -49,6 +49,12 @@ public class LocalAuthenticator extends AbstractAuthenticator {
     public RequestResult forceRegister(String username, String password) {
         if(fetchStatus(username)!= UserStatus.NOT_EXIST) return RequestResult.USER_ALREADY_EXISTS;
         try(var conn = DatabaseHandler.getInstance().getConnection()){
+            var dupCheck = conn.prepareStatement("SELECT 1 FROM users WHERE LOWER(username) = LOWER(?)");
+            dupCheck.setString(1, username);
+            if(dupCheck.executeQuery().next()) {
+                return RequestResult.USER_ALREADY_EXISTS;
+            }
+
             var stmt = conn.prepareStatement("INSERT INTO users (username, password, format, email) VALUES (?,?,?,?)");
             stmt.setString(1, username);
             stmt.setString(2, BCrypt.withDefaults().hashToString(10, password.toCharArray()));

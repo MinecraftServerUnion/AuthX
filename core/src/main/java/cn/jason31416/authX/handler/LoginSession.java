@@ -41,7 +41,8 @@ public class LoginSession implements cn.jason31416.authx.api.ILoginSession {
 
     public static LoginSession getSession(String username) {
         if(!sessionMap.containsKey(username)){
-            Logger.error("Unknown session found for username: "+username+"! Things might break.");
+//            Logger.error("Unknown session found for username: "+username+"! Things might break.");
+            // this has proven to be completely fine.
             return new LoginSession(username, UuidUtils.generateOfflinePlayerUuid(username));
         }
         return sessionMap.get(username);

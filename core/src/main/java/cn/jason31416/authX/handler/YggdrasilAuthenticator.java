@@ -159,7 +159,6 @@ public class YggdrasilAuthenticator {
     }
 
     public static PlayerProfile authenticate(String username, String serverID, String ip) {
-        System.out.println(username+" "+serverID+" "+ip);
         MapTree authServers = Config.getSection("authentication.yggdrasil.auth-servers");
         try{
             String preferredMethod = DatabaseHandler.getInstance().getPreferredMethod(username);

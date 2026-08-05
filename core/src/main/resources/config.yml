@@ -58,6 +58,9 @@ authentication:
       url: "http://localhost:8500/"
       api-key: ""
 
+      connect-timeout-ms: 5000
+      request-timeout-ms: 10000
+
       perform-local-backup: true
 
 prefix: # Used for placeholder/TAB integration. Use %authx-auth-tag% in TAB to display.
